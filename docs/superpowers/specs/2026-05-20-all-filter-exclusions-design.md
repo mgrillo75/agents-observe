@@ -51,12 +51,12 @@ Conventions:
 
 ## Architecture
 
-The All filter is evaluated at one place: inside each agent class's `processEvent` implementation, after the existing `applyFilters(...)` call. A new shared helper `evaluateAllFilter(raw, toolName, compiledFilters)` returns `true` if the event should be visible. When it returns `false`, both `displayEventStream` and `displayTimeline` are forced to `false` on the returned enriched event.
+The All filter is evaluated at one place: inside each agent class's `processEvent` implementation, after the existing `applyFilters(...)` call. A new shared helper `passesAllFilter(raw, toolName, compiledFilters)` returns `true` if the event should be visible. When it returns `false`, both `displayEventStream` and `displayTimeline` are forced to `false` on the returned enriched event.
 
 Helper contract (in `app/client/src/lib/filters/all-filter.ts`):
 
 ```ts
-export function evaluateAllFilter(
+export function passesAllFilter(
   raw: RawEvent,
   toolName: string | null,
   compiledFilters: readonly CompiledFilter[],
@@ -79,7 +79,7 @@ In `app/client/src/agents/claude-code/process-event.ts`, near the existing `appl
 
 ```ts
 const filters = applyFilters(raw, toolName, ctx.compiledFilters)
-const passesAll = evaluateAllFilter(raw, toolName, ctx.compiledFilters)
+const passesAll = passesAllFilter(raw, toolName, ctx.compiledFilters)
 
 return {
   event: {
@@ -92,7 +92,7 @@ return {
 }
 ```
 
-When `processEvent` recomputes filters mid-flow (the line-311 refresh path for batch updates), `evaluateAllFilter` is also re-run so deferred mutations honor the latest setting.
+When `processEvent` recomputes filters mid-flow (the line-311 refresh path for batch updates), `passesAllFilter` is also re-run so deferred mutations honor the latest setting.
 
 Other agent classes (`codex/`, `default/`) get the same one-line change. The Codex and default agents have their own `processEvent` and `applyFilters` calls — applying the same pattern keeps every agent class consistent.
 
@@ -107,7 +107,7 @@ The compiled filter already provides per-pattern regex matchers (one `RE2JS.Patt
    - `or`: at least one pattern's match (post-negation) must be true.
 4. Return the combined boolean.
 
-This is the same logic `lib/filters/matcher.ts` runs today. To avoid duplication, we factor the per-filter evaluation out of `matcher.ts` into a helper used by both `applyFilters` and `evaluateAllFilter`.
+This mirrors the same logic `lib/filters/matcher.ts` runs today. We accept the small (~15-line) duplication of the per-pattern loop rather than refactoring `applyFilters` to share its inner loop — the matcher is hot code and changing its shape has broader risk than is justified by the duplication.
 
 ## Settings UI
 
@@ -140,7 +140,7 @@ These code paths are explicitly untouched:
 
 New tests:
 
-1. **`lib/filters/all-filter.test.ts`** — unit tests for `evaluateAllFilter`:
+1. **`lib/filters/all-filter.test.ts`** — unit tests for `passesAllFilter`:
    - Returns `true` when no `default-all` filter exists in compiled set.
    - Returns `true` when the filter exists but is disabled.
    - Returns `false` for events whose hook matches a negated pattern.
