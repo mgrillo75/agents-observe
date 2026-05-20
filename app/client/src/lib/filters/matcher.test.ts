@@ -222,4 +222,21 @@ describe('applyFilters', () => {
     // though the negated check would otherwise pass.
     expect(applyFilters(baseRaw, '', [tools]).primary).toEqual([])
   })
+
+  test('skips the default-all filter so it never produces a pill', () => {
+    const f = compile({
+      name: 'default-all', // local helper sets id := name
+      pillName: 'All',
+      combinator: 'and',
+      patterns: [{ target: 'hook', regex: '^PostToolBatch$', negate: true }],
+    })
+    const raw = {
+      id: 1,
+      agentId: 'a',
+      hookName: 'PreToolUse',
+      timestamp: 0,
+      payload: {},
+    }
+    expect(applyFilters(raw, 'Bash', [f])).toEqual({ primary: [], secondary: [] })
+  })
 })

@@ -1,5 +1,6 @@
 import type { RawEvent } from '@/agents/types'
 import type { CompiledFilter } from './types'
+import { ALL_FILTER_ID } from './all-filter'
 
 const VAR_RE = /\{([a-zA-Z]+)\}/g
 
@@ -83,6 +84,10 @@ export function applyFilters(
   const secondary: string[] = []
 
   for (const f of compiled) {
+    // The All filter expresses event-visibility exclusions, not a pill
+    // category. It's evaluated separately by `passesAllFilter` to gate
+    // displayEventStream / displayTimeline.
+    if (f.id === ALL_FILTER_ID) continue
     const wantAll = f.combinator === 'and'
     let matched = wantAll
     for (const p of f.patterns) {
