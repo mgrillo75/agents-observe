@@ -133,7 +133,7 @@ function CostCell({
         <TooltipContent
           side="left"
           align="start"
-          className="!bg-popover !text-popover-foreground border border-border max-w-md p-3 shadow-md"
+          className="!bg-popover !text-popover-foreground border border-amber-500 max-w-md p-3 shadow-md"
         >
           <div className="text-[9px] uppercase tracking-wide text-muted-foreground mb-2">
             Cost breakdown{multi && ' · multiple models'}
