@@ -201,9 +201,7 @@ export function getServerEnv(config) {
     AGENTS_OBSERVE_STORAGE_ADAPTER: 'sqlite',
     AGENTS_OBSERVE_TRANSCRIPT_STATS: config.transcriptStatsEnabled ? '1' : '',
     AGENTS_OBSERVE_TRANSCRIPT_HOST_BASE:
-      isDocker && config.transcriptStatsEnabled
-        ? resolve(config.homeDir, '.claude/projects')
-        : '',
+      isDocker && config.transcriptStatsEnabled ? resolve(config.homeDir, '.claude/projects') : '',
     AGENTS_OBSERVE_TRANSCRIPT_CONTAINER_BASE:
       isDocker && config.transcriptStatsEnabled ? '/host/.claude/projects' : '',
   }

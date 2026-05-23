@@ -25,10 +25,7 @@ router.get('/sessions/:sessionId/transcript-stats', async (c) => {
   const store = c.get('store')
   const hostPath = await store.getSessionTranscriptPath(sessionId)
   if (!hostPath) {
-    return c.json(
-      { error: 'no_transcript', message: 'No transcript path found for session.' },
-      404,
-    )
+    return c.json({ error: 'no_transcript', message: 'No transcript path found for session.' }, 404)
   }
 
   const resolved = resolveTranscriptPath(

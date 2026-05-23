@@ -131,8 +131,7 @@ export async function parseTranscriptFile(filePath: string): Promise<TranscriptS
           timestamp: ts, // first occurrence's timestamp
           model: typeof msg.model === 'string' ? msg.model : '',
           isSidechain: line.isSidechain === true,
-          serviceTier:
-            typeof msg.usage?.service_tier === 'string' ? msg.usage.service_tier : null,
+          serviceTier: typeof msg.usage?.service_tier === 'string' ? msg.usage.service_tier : null,
           stopReason: typeof msg.stop_reason === 'string' ? msg.stop_reason : null,
           usage: extractUsage(msg.usage),
           toolUseIds,
