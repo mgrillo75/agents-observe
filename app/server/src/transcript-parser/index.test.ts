@@ -65,9 +65,7 @@ function writeMainFixture(): string {
   return p
 }
 
-function makeStore(opts: {
-  agents: Array<{ id: string; agent_class: string }>
-}): EventStore {
+function makeStore(opts: { agents: Array<{ id: string; agent_class: string }> }): EventStore {
   return {
     getSessionTranscriptPath: async () => null,
     getAgentsForSession: async () => opts.agents as any,

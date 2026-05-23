@@ -55,9 +55,7 @@ describe('getModelsPricing', () => {
   })
 
   test('returns cached map on second call without re-fetching', async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValue({ ok: true, json: async () => MODELS_DEV_FIXTURE })
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: async () => MODELS_DEV_FIXTURE })
     vi.stubGlobal('fetch', fetchSpy)
     const { getModelsPricing } = await import('./models-pricing')
     await getModelsPricing()

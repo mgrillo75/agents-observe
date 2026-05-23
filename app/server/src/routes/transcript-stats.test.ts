@@ -103,8 +103,7 @@ describe('GET /api/sessions/:sessionId/transcript-stats', () => {
     const path = writeFixture()
     const app = makeApp({
       getSessionTranscriptPath: async () => path,
-      getAgentsForSession: async () =>
-        [{ id: 'sess1', agent_class: 'claude-code' }] as any,
+      getAgentsForSession: async () => [{ id: 'sess1', agent_class: 'claude-code' }] as any,
     })
     const res = await app.request('/api/sessions/sess1/transcript-stats')
     expect(res.status).toBe(200)
@@ -190,13 +189,10 @@ describe('GET /api/sessions/:sessionId/transcript-stats', () => {
     const reloaded = (await import('./transcript-stats')).default
     const app = new Hono<{ Variables: { store: EventStore } }>()
     app.use('*', async (c, next) => {
-      c.set(
-        'store',
-        {
-          getSessionTranscriptPath: async () => path,
-          getAgentsForSession: async () => [],
-        } as unknown as EventStore,
-      )
+      c.set('store', {
+        getSessionTranscriptPath: async () => path,
+        getAgentsForSession: async () => [],
+      } as unknown as EventStore)
       await next()
     })
     app.route('/api', reloaded)

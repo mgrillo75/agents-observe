@@ -108,8 +108,7 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
           timestamp: ts,
           model: typeof msg.model === 'string' ? msg.model : '',
           isSidechain: line.isSidechain === true,
-          serviceTier:
-            typeof msg.usage?.service_tier === 'string' ? msg.usage.service_tier : null,
+          serviceTier: typeof msg.usage?.service_tier === 'string' ? msg.usage.service_tier : null,
           stopReason: typeof msg.stop_reason === 'string' ? msg.stop_reason : null,
           usage: extractUsage(msg.usage),
           toolUseIds,
@@ -217,15 +216,17 @@ export async function parseClaudeSession(
       continue
     }
 
-    let meta: { agentType: string | null; description: string | null; toolUseId: string | null } =
-      { agentType: null, description: null, toolUseId: null }
+    let meta: { agentType: string | null; description: string | null; toolUseId: string | null } = {
+      agentType: null,
+      description: null,
+      toolUseId: null,
+    }
     try {
       const metaRaw = await fsp.readFile(metaPath, 'utf8')
       const parsedMeta = JSON.parse(metaRaw)
       meta = {
         agentType: typeof parsedMeta.agentType === 'string' ? parsedMeta.agentType : null,
-        description:
-          typeof parsedMeta.description === 'string' ? parsedMeta.description : null,
+        description: typeof parsedMeta.description === 'string' ? parsedMeta.description : null,
         toolUseId: typeof parsedMeta.toolUseId === 'string' ? parsedMeta.toolUseId : null,
       }
     } catch {

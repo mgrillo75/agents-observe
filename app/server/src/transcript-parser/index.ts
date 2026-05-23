@@ -29,12 +29,8 @@ export async function parseSessionTranscripts(
   const errors: TranscriptParseError[] = []
 
   // Group by agent_class for dispatch. v1: claude-code only.
-  const claudeAgents = agents.filter(
-    (a: any) => (a.agent_class ?? 'claude-code') === 'claude-code',
-  )
-  const otherAgents = agents.filter(
-    (a: any) => (a.agent_class ?? 'claude-code') !== 'claude-code',
-  )
+  const claudeAgents = agents.filter((a: any) => (a.agent_class ?? 'claude-code') === 'claude-code')
+  const otherAgents = agents.filter((a: any) => (a.agent_class ?? 'claude-code') !== 'claude-code')
 
   for (const a of otherAgents) {
     errors.push({
@@ -46,9 +42,7 @@ export async function parseSessionTranscripts(
   }
 
   // The session's main agent has the same id as the session. Anything else is a subagent.
-  const subagentIds = claudeAgents
-    .map((a: any) => a.id as string)
-    .filter((id) => id !== sessionId)
+  const subagentIds = claudeAgents.map((a: any) => a.id as string).filter((id) => id !== sessionId)
 
   const result = await parseClaudeSession(containerTranscriptPath, subagentIds)
   errors.push(...result.errors)
@@ -59,7 +53,10 @@ export async function parseSessionTranscripts(
   const byModel = aggregateByModel(result.calls, subagents, pricingMap)
   const prompts = aggregatePrompts(result.calls, result.prompts, subagents, pricingMap)
   const summary = aggregateSummary(result.calls, subagents, pricingMap)
-  const models = buildModelsMap(byModel.map((m) => m.model), pricingMap)
+  const models = buildModelsMap(
+    byModel.map((m) => m.model),
+    pricingMap,
+  )
 
   return {
     source: 'jsonl',
@@ -74,10 +71,7 @@ export async function parseSessionTranscripts(
 
 // ── cost helpers ──────────────────────────────────────────────────
 
-function computeCallCostCents(
-  usage: TranscriptUsage,
-  pricing: ModelPricing,
-): number {
+function computeCallCostCents(usage: TranscriptUsage, pricing: ModelPricing): number {
   const dollars =
     (usage.inputTokens * pricing.inputPerM +
       usage.outputTokens * pricing.outputPerM +
@@ -146,10 +140,7 @@ function aggregateByModel(
     }
     // Reverse-derive the "fresh" input slice (bundled total - cache parts).
     const fresh =
-      row.inputTokens -
-      row.cacheReadTokens -
-      row.cacheCreate5mTokens -
-      row.cacheCreate1hTokens
+      row.inputTokens - row.cacheReadTokens - row.cacheCreate5mTokens - row.cacheCreate1hTokens
     row.costCents = computeCallCostCents(
       {
         inputTokens: Math.max(fresh, 0),
@@ -222,9 +213,7 @@ function aggregatePrompts(
       }
     }
     const nextTimestamp =
-      i + 1 < sortedPromptIds.length
-        ? promptsIndex[sortedPromptIds[i + 1]].timestamp
-        : null
+      i + 1 < sortedPromptIds.length ? promptsIndex[sortedPromptIds[i + 1]].timestamp : null
     const durationMs = nextTimestamp ? nextTimestamp - promptMeta.timestamp : null
 
     out.push({
@@ -250,11 +239,7 @@ function attachSubagentCosts(
   return subagents.map((s) => {
     const pricing = pricingMap[s.model]
     if (!pricing) return { ...s, costCents: null }
-    const fresh =
-      s.inputTokens -
-      s.cacheReadTokens -
-      s.cacheCreate5mTokens -
-      s.cacheCreate1hTokens
+    const fresh = s.inputTokens - s.cacheReadTokens - s.cacheCreate5mTokens - s.cacheCreate1hTokens
     const costCents = computeCallCostCents(
       {
         inputTokens: Math.max(fresh, 0),
