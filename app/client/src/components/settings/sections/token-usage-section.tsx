@@ -335,348 +335,371 @@ export function TokenUsageSection({
   // before deciding either way (avoids flashing the disabled note).
   const transcriptDisabledByFlag = health !== undefined && !transcriptStatsEnabled
 
-  const { agentRows, agentTotals } = buildAgentsTable({
-    mainAgentId,
-    sessionDurationMs,
-    mainAgentToolCount,
-    eventSubagents,
-    transcript,
-  })
+  const { agentRows, agentTotals } = useMemo(
+    () =>
+      buildAgentsTable({
+        mainAgentId,
+        sessionDurationMs,
+        mainAgentToolCount,
+        eventSubagents,
+        transcript,
+      }),
+    [mainAgentId, sessionDurationMs, mainAgentToolCount, eventSubagents, transcript],
+  )
 
   const hasTranscript = transcript !== null
 
   // ── By Model (transcripts only) ───────────────────────────────
-  const byModelCols: SortableColumn<TranscriptStatsByModel>[] = transcript
-    ? [
-        {
-          key: 'model',
-          label: 'Model',
-          sortType: 'string',
-          render: (r) => (
-            <ModelBadge modelId={r.model} pricing={transcript.models[r.model]?.pricing} />
-          ),
-          sortValue: (r) => r.model,
-        },
-        {
-          key: 'calls',
-          label: 'Requests',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => fmt(r.calls),
-          sortValue: (r) => r.calls,
-        },
-        {
-          key: 'input',
-          label: 'Input',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => fmt(r.inputTokens),
-          sortValue: (r) => r.inputTokens,
-        },
-        {
-          key: 'output',
-          label: 'Output',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => fmt(r.outputTokens),
-          sortValue: (r) => r.outputTokens,
-        },
-        {
-          key: 'cachePct',
-          label: 'Cache %',
-          sortType: 'number',
-          align: 'right',
-          render: (r) =>
-            r.inputTokens > 0 ? (
-              <span className="text-green-500">{fmtPct(r.cacheReadTokens / r.inputTokens)}</span>
-            ) : (
-              '—'
-            ),
-          sortValue: (r) => (r.inputTokens > 0 ? r.cacheReadTokens / r.inputTokens : 0),
-        },
-        {
-          key: 'cacheRead',
-          label: 'Cache read',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => <span className="text-muted-foreground">{fmt(r.cacheReadTokens)}</span>,
-          sortValue: (r) => r.cacheReadTokens,
-          className: 'border-l border-border/30',
-        },
-        {
-          key: 'cacheWrite',
-          label: 'Cache write',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => (
-            <span className="text-muted-foreground">
-              {fmt(r.cacheCreate5mTokens + r.cacheCreate1hTokens)}
-            </span>
-          ),
-          sortValue: (r) => r.cacheCreate5mTokens + r.cacheCreate1hTokens,
-        },
-        {
-          key: 'cost',
-          label: 'Est Cost',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => {
-            const p = transcript.models[r.model]?.pricing
-            return (
-              <CostCell
-                costCents={r.costCents}
-                pricings={p ? [p] : []}
-                inputTokens={r.inputTokens}
-                outputTokens={r.outputTokens}
-                cacheReadTokens={r.cacheReadTokens}
-                cacheCreate5mTokens={r.cacheCreate5mTokens}
-                cacheCreate1hTokens={r.cacheCreate1hTokens}
-              />
-            )
-          },
-          sortValue: (r) => r.costCents ?? 0,
-          className: 'border-l border-border/30',
-        },
-      ]
-    : []
+  const byModelCols: SortableColumn<TranscriptStatsByModel>[] = useMemo(
+    () =>
+      transcript
+        ? [
+            {
+              key: 'model',
+              label: 'Model',
+              sortType: 'string',
+              render: (r) => (
+                <ModelBadge modelId={r.model} pricing={transcript.models[r.model]?.pricing} />
+              ),
+              sortValue: (r) => r.model,
+            },
+            {
+              key: 'calls',
+              label: 'Requests',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => fmt(r.calls),
+              sortValue: (r) => r.calls,
+            },
+            {
+              key: 'input',
+              label: 'Input',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => fmt(r.inputTokens),
+              sortValue: (r) => r.inputTokens,
+            },
+            {
+              key: 'output',
+              label: 'Output',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => fmt(r.outputTokens),
+              sortValue: (r) => r.outputTokens,
+            },
+            {
+              key: 'cachePct',
+              label: 'Cache %',
+              sortType: 'number',
+              align: 'right',
+              render: (r) =>
+                r.inputTokens > 0 ? (
+                  <span className="text-green-500">
+                    {fmtPct(r.cacheReadTokens / r.inputTokens)}
+                  </span>
+                ) : (
+                  '—'
+                ),
+              sortValue: (r) => (r.inputTokens > 0 ? r.cacheReadTokens / r.inputTokens : 0),
+            },
+            {
+              key: 'cacheRead',
+              label: 'Cache read',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => (
+                <span className="text-muted-foreground">{fmt(r.cacheReadTokens)}</span>
+              ),
+              sortValue: (r) => r.cacheReadTokens,
+              className: 'border-l border-border/30',
+            },
+            {
+              key: 'cacheWrite',
+              label: 'Cache write',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => (
+                <span className="text-muted-foreground">
+                  {fmt(r.cacheCreate5mTokens + r.cacheCreate1hTokens)}
+                </span>
+              ),
+              sortValue: (r) => r.cacheCreate5mTokens + r.cacheCreate1hTokens,
+            },
+            {
+              key: 'cost',
+              label: 'Est Cost',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => {
+                const p = transcript.models[r.model]?.pricing
+                return (
+                  <CostCell
+                    costCents={r.costCents}
+                    pricings={p ? [p] : []}
+                    inputTokens={r.inputTokens}
+                    outputTokens={r.outputTokens}
+                    cacheReadTokens={r.cacheReadTokens}
+                    cacheCreate5mTokens={r.cacheCreate5mTokens}
+                    cacheCreate1hTokens={r.cacheCreate1hTokens}
+                  />
+                )
+              },
+              sortValue: (r) => r.costCents ?? 0,
+              className: 'border-l border-border/30',
+            },
+          ]
+        : [],
+    [transcript],
+  )
 
   // ── By Prompt (transcripts only) ──────────────────────────────
-  const promptCols: SortableColumn<TranscriptStatsPrompt>[] = transcript
-    ? [
-        {
-          key: 'prompt',
-          label: 'Prompt',
-          count: transcript.prompts.length,
-          sortType: 'string',
-          render: (r) => {
-            // Only prompts with a matching UserPromptSubmit event can
-            // scroll. Pre-plugin prompts on resumed sessions render
-            // muted + non-clickable.
-            const hasEvent = eventPromptTexts.has(r.text)
-            if (!hasEvent) {
-              return (
-                <span
-                  className="block truncate max-w-[400px] text-muted-foreground/50"
-                  title={`${r.text}\n\n(no matching event — pre-plugin prompt)`}
-                >
-                  {r.text}
+  const promptCols: SortableColumn<TranscriptStatsPrompt>[] = useMemo(
+    () =>
+      transcript
+        ? [
+            {
+              key: 'prompt',
+              label: 'Prompt',
+              count: transcript.prompts.length,
+              sortType: 'string',
+              render: (r) => {
+                // Only prompts with a matching UserPromptSubmit event can
+                // scroll. Pre-plugin prompts on resumed sessions render
+                // muted + non-clickable.
+                const hasEvent = eventPromptTexts.has(r.text)
+                if (!hasEvent) {
+                  return (
+                    <span
+                      className="block truncate max-w-[400px] text-muted-foreground/50"
+                      title={`${r.text}\n\n(no matching event — pre-plugin prompt)`}
+                    >
+                      {r.text}
+                    </span>
+                  )
+                }
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onPromptClick(r.text, r.timestamp)}
+                    className="block truncate max-w-[400px] text-left cursor-pointer hover:underline"
+                    title={r.text}
+                  >
+                    {r.text}
+                  </button>
+                )
+              },
+              sortValue: (r) => r.text,
+            },
+            {
+              key: 'duration',
+              label: 'Duration',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => (r.durationMs == null ? '—' : fmtMs(r.durationMs)),
+              sortValue: (r) => r.durationMs ?? 0,
+              className: 'whitespace-nowrap',
+            },
+            {
+              key: 'tools',
+              label: 'Tools',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => fmt(r.toolCount),
+              sortValue: (r) => r.toolCount,
+            },
+            {
+              key: 'requests',
+              label: 'Requests',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => fmt(r.requests),
+              sortValue: (r) => r.requests,
+            },
+            {
+              key: 'input',
+              label: 'Input',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => fmt(r.inputTokens),
+              sortValue: (r) => r.inputTokens,
+            },
+            {
+              key: 'output',
+              label: 'Output',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => fmt(r.outputTokens),
+              sortValue: (r) => r.outputTokens,
+            },
+            {
+              key: 'models',
+              label: 'Model',
+              sortType: 'string',
+              render: (r) => (
+                <span className="flex flex-wrap gap-1">
+                  {r.models.map((m) => (
+                    <ModelBadge key={m} modelId={m} pricing={transcript.models[m]?.pricing} />
+                  ))}
                 </span>
-              )
-            }
-            return (
-              <button
-                type="button"
-                onClick={() => onPromptClick(r.text, r.timestamp)}
-                className="block truncate max-w-[400px] text-left cursor-pointer hover:underline"
-                title={r.text}
-              >
-                {r.text}
-              </button>
-            )
-          },
-          sortValue: (r) => r.text,
-        },
-        {
-          key: 'duration',
-          label: 'Duration',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => (r.durationMs == null ? '—' : fmtMs(r.durationMs)),
-          sortValue: (r) => r.durationMs ?? 0,
-          className: 'whitespace-nowrap',
-        },
-        {
-          key: 'tools',
-          label: 'Tools',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => fmt(r.toolCount),
-          sortValue: (r) => r.toolCount,
-        },
-        {
-          key: 'requests',
-          label: 'Requests',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => fmt(r.requests),
-          sortValue: (r) => r.requests,
-        },
-        {
-          key: 'input',
-          label: 'Input',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => fmt(r.inputTokens),
-          sortValue: (r) => r.inputTokens,
-        },
-        {
-          key: 'output',
-          label: 'Output',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => fmt(r.outputTokens),
-          sortValue: (r) => r.outputTokens,
-        },
-        {
-          key: 'models',
-          label: 'Model',
-          sortType: 'string',
-          render: (r) => (
-            <span className="flex flex-wrap gap-1">
-              {r.models.map((m) => (
-                <ModelBadge key={m} modelId={m} pricing={transcript.models[m]?.pricing} />
-              ))}
-            </span>
-          ),
-          sortValue: (r) => r.models.join(','),
-        },
-        {
-          key: 'cost',
-          label: 'Est Cost',
-          sortType: 'number',
-          align: 'right',
-          render: (r) => {
-            const pricings = r.models
-              .map((m) => transcript.models[m]?.pricing)
-              .filter((p): p is NonNullable<typeof p> => !!p)
-            return (
-              <CostCell
-                costCents={r.costCents}
-                pricings={pricings}
-                inputTokens={r.inputTokens}
-                outputTokens={r.outputTokens}
-                cacheReadTokens={r.cacheReadTokens}
-                cacheCreate5mTokens={r.cacheCreate5mTokens}
-                cacheCreate1hTokens={r.cacheCreate1hTokens}
-              />
-            )
-          },
-          sortValue: (r) => r.costCents ?? 0,
-        },
-      ]
-    : []
+              ),
+              sortValue: (r) => r.models.join(','),
+            },
+            {
+              key: 'cost',
+              label: 'Est Cost',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => {
+                const pricings = r.models
+                  .map((m) => transcript.models[m]?.pricing)
+                  .filter((p): p is NonNullable<typeof p> => !!p)
+                return (
+                  <CostCell
+                    costCents={r.costCents}
+                    pricings={pricings}
+                    inputTokens={r.inputTokens}
+                    outputTokens={r.outputTokens}
+                    cacheReadTokens={r.cacheReadTokens}
+                    cacheCreate5mTokens={r.cacheCreate5mTokens}
+                    cacheCreate1hTokens={r.cacheCreate1hTokens}
+                  />
+                )
+              },
+              sortValue: (r) => r.costCents ?? 0,
+            },
+          ]
+        : [],
+    [transcript, eventPromptTexts, onPromptClick],
+  )
 
-  const promptTotals = transcript
-    ? {
-        durationMs: transcript.prompts.reduce((s, p) => s + (p.durationMs ?? 0), 0),
-        toolCount: transcript.prompts.reduce((s, p) => s + p.toolCount, 0),
-        requests: transcript.prompts.reduce((s, p) => s + p.requests, 0),
-        inputTokens: transcript.prompts.reduce((s, p) => s + p.inputTokens, 0),
-        outputTokens: transcript.prompts.reduce((s, p) => s + p.outputTokens, 0),
-        costCents: transcript.prompts.some((p) => p.costCents == null)
-          ? null
-          : transcript.prompts.reduce((s, p) => s + (p.costCents ?? 0), 0),
-      }
-    : null
+  const promptTotals = useMemo(
+    () =>
+      transcript
+        ? {
+            durationMs: transcript.prompts.reduce((s, p) => s + (p.durationMs ?? 0), 0),
+            toolCount: transcript.prompts.reduce((s, p) => s + p.toolCount, 0),
+            requests: transcript.prompts.reduce((s, p) => s + p.requests, 0),
+            inputTokens: transcript.prompts.reduce((s, p) => s + p.inputTokens, 0),
+            outputTokens: transcript.prompts.reduce((s, p) => s + p.outputTokens, 0),
+            costCents: transcript.prompts.some((p) => p.costCents == null)
+              ? null
+              : transcript.prompts.reduce((s, p) => s + (p.costCents ?? 0), 0),
+          }
+        : null,
+    [transcript],
+  )
 
   // ── Agents table columns ──────────────────────────────────────
   // The Model + Est Cost columns only render when transcript data is
   // available — events don't carry model id or pricing.
-  const agentCols: SortableColumn<AgentRow>[] = [
-    {
-      key: 'agent',
-      label: 'Agent',
-      count: agentRows.length,
-      sortType: 'string',
-      render: (r) =>
-        r.isMain ? (
-          <span className="font-mono">main</span>
-        ) : (
-          <AgentNameCell
-            agentId={r.agentId}
-            agents={agents}
-            agentColorMap={agentColorMap}
-            onClick={onAgentClick}
-          />
-        ),
-      sortValue: (r) => (r.isMain ? '' : r.agentId),
-    },
-    {
-      key: 'type',
-      label: 'Type',
-      sortType: 'string',
-      render: (r) => <span className="text-blue-300">{r.agentType ?? '—'}</span>,
-      sortValue: (r) => r.agentType ?? '',
-    },
-    {
-      key: 'duration',
-      label: 'Duration',
-      sortType: 'number',
-      align: 'right',
-      render: (r) => (r.durationMs > 0 ? fmtMs(r.durationMs) : '—'),
-      sortValue: (r) => r.durationMs,
-      className: 'whitespace-nowrap',
-    },
-    {
-      key: 'tools',
-      label: 'Tools',
-      sortType: 'number',
-      align: 'right',
-      render: (r) => (r.toolCount > 0 ? fmt(r.toolCount) : '—'),
-      sortValue: (r) => r.toolCount,
-    },
-    {
-      key: 'requests',
-      label: 'Requests',
-      sortType: 'number',
-      align: 'right',
-      render: (r) => (r.requests == null ? '—' : fmt(r.requests)),
-      sortValue: (r) => r.requests ?? 0,
-    },
-    {
-      key: 'input',
-      label: 'Input',
-      sortType: 'number',
-      align: 'right',
-      render: (r) => (r.inputTokens == null ? '—' : fmt(r.inputTokens)),
-      sortValue: (r) => r.inputTokens ?? 0,
-    },
-    {
-      key: 'output',
-      label: 'Output',
-      sortType: 'number',
-      align: 'right',
-      render: (r) => (r.outputTokens == null ? '—' : fmt(r.outputTokens)),
-      sortValue: (r) => r.outputTokens ?? 0,
-    },
-    ...(hasTranscript
-      ? ([
-          {
-            key: 'model',
-            label: 'Model',
-            sortType: 'string',
-            render: (r) =>
-              r.model && transcript ? (
-                <ModelBadge modelId={r.model} pricing={transcript.models[r.model]?.pricing} />
-              ) : (
-                '—'
-              ),
-            sortValue: (r) => r.model ?? '',
-          },
-          {
-            key: 'cost',
-            label: 'Est Cost',
-            sortType: 'number',
-            align: 'right',
-            render: (r) => {
-              const p = r.model && transcript ? transcript.models[r.model]?.pricing : null
-              return (
-                <CostCell
-                  costCents={r.costCents}
-                  pricings={p ? [p] : []}
-                  inputTokens={r.inputTokens ?? 0}
-                  outputTokens={r.outputTokens ?? 0}
-                  cacheReadTokens={r.cacheReadTokens ?? 0}
-                  cacheCreate5mTokens={r.cacheCreate5mTokens ?? 0}
-                  cacheCreate1hTokens={r.cacheCreate1hTokens ?? 0}
-                />
-              )
+  const agentCols: SortableColumn<AgentRow>[] = useMemo(
+    () => [
+      {
+        key: 'agent',
+        label: 'Agent',
+        count: agentRows.length,
+        sortType: 'string',
+        render: (r) =>
+          r.isMain ? (
+            <span className="font-mono">main</span>
+          ) : (
+            <AgentNameCell
+              agentId={r.agentId}
+              agents={agents}
+              agentColorMap={agentColorMap}
+              onClick={onAgentClick}
+            />
+          ),
+        sortValue: (r) => (r.isMain ? '' : r.agentId),
+      },
+      {
+        key: 'type',
+        label: 'Type',
+        sortType: 'string',
+        render: (r) => <span className="text-blue-300">{r.agentType ?? '—'}</span>,
+        sortValue: (r) => r.agentType ?? '',
+      },
+      {
+        key: 'duration',
+        label: 'Duration',
+        sortType: 'number',
+        align: 'right',
+        render: (r) => (r.durationMs > 0 ? fmtMs(r.durationMs) : '—'),
+        sortValue: (r) => r.durationMs,
+        className: 'whitespace-nowrap',
+      },
+      {
+        key: 'tools',
+        label: 'Tools',
+        sortType: 'number',
+        align: 'right',
+        render: (r) => (r.toolCount > 0 ? fmt(r.toolCount) : '—'),
+        sortValue: (r) => r.toolCount,
+      },
+      {
+        key: 'requests',
+        label: 'Requests',
+        sortType: 'number',
+        align: 'right',
+        render: (r) => (r.requests == null ? '—' : fmt(r.requests)),
+        sortValue: (r) => r.requests ?? 0,
+      },
+      {
+        key: 'input',
+        label: 'Input',
+        sortType: 'number',
+        align: 'right',
+        render: (r) => (r.inputTokens == null ? '—' : fmt(r.inputTokens)),
+        sortValue: (r) => r.inputTokens ?? 0,
+      },
+      {
+        key: 'output',
+        label: 'Output',
+        sortType: 'number',
+        align: 'right',
+        render: (r) => (r.outputTokens == null ? '—' : fmt(r.outputTokens)),
+        sortValue: (r) => r.outputTokens ?? 0,
+      },
+      ...(hasTranscript
+        ? ([
+            {
+              key: 'model',
+              label: 'Model',
+              sortType: 'string',
+              render: (r) =>
+                r.model && transcript ? (
+                  <ModelBadge modelId={r.model} pricing={transcript.models[r.model]?.pricing} />
+                ) : (
+                  '—'
+                ),
+              sortValue: (r) => r.model ?? '',
             },
-            sortValue: (r) => r.costCents ?? 0,
-          },
-        ] as SortableColumn<AgentRow>[])
-      : []),
-  ]
+            {
+              key: 'cost',
+              label: 'Est Cost',
+              sortType: 'number',
+              align: 'right',
+              render: (r) => {
+                const p = r.model && transcript ? transcript.models[r.model]?.pricing : null
+                return (
+                  <CostCell
+                    costCents={r.costCents}
+                    pricings={p ? [p] : []}
+                    inputTokens={r.inputTokens ?? 0}
+                    outputTokens={r.outputTokens ?? 0}
+                    cacheReadTokens={r.cacheReadTokens ?? 0}
+                    cacheCreate5mTokens={r.cacheCreate5mTokens ?? 0}
+                    cacheCreate1hTokens={r.cacheCreate1hTokens ?? 0}
+                  />
+                )
+              },
+              sortValue: (r) => r.costCents ?? 0,
+            },
+          ] as SortableColumn<AgentRow>[])
+        : []),
+    ],
+    [agents, agentColorMap, agentRows.length, onAgentClick, hasTranscript, transcript],
+  )
 
   // Default sort: Est Cost desc when transcripts available (gives the
   // most useful info up top), otherwise Duration desc — the only
@@ -685,33 +708,35 @@ export function TokenUsageSection({
     ? ({ key: 'cost', dir: 'desc' } as const)
     : ({ key: 'duration', dir: 'desc' } as const)
 
-  const agentTotalCell = (
-    <span className="uppercase text-[9px] tracking-wide">
-      Total
-      <span className="ml-1.5 text-muted-foreground/50 normal-case">({agentRows.length})</span>
-    </span>
-  )
-  const agentFooter = hasTranscript
-    ? [
-        agentTotalCell,
-        null,
-        agentTotals.durationMs > 0 ? fmtMs(agentTotals.durationMs) : '—',
-        fmt(agentTotals.toolCount),
-        agentTotals.requests == null ? '—' : fmt(agentTotals.requests),
-        agentTotals.inputTokens == null ? '—' : fmt(agentTotals.inputTokens),
-        agentTotals.outputTokens == null ? '—' : fmt(agentTotals.outputTokens),
-        null,
-        <span className="text-amber-500">{fmtCents(agentTotals.costCents)}</span>,
-      ]
-    : [
-        agentTotalCell,
-        null,
-        agentTotals.durationMs > 0 ? fmtMs(agentTotals.durationMs) : '—',
-        fmt(agentTotals.toolCount),
-        agentTotals.requests == null ? '—' : fmt(agentTotals.requests),
-        agentTotals.inputTokens == null ? '—' : fmt(agentTotals.inputTokens),
-        agentTotals.outputTokens == null ? '—' : fmt(agentTotals.outputTokens),
-      ]
+  const agentFooter = useMemo(() => {
+    const agentTotalCell = (
+      <span className="uppercase text-[9px] tracking-wide">
+        Total
+        <span className="ml-1.5 text-muted-foreground/50 normal-case">({agentRows.length})</span>
+      </span>
+    )
+    return hasTranscript
+      ? [
+          agentTotalCell,
+          null,
+          agentTotals.durationMs > 0 ? fmtMs(agentTotals.durationMs) : '—',
+          fmt(agentTotals.toolCount),
+          agentTotals.requests == null ? '—' : fmt(agentTotals.requests),
+          agentTotals.inputTokens == null ? '—' : fmt(agentTotals.inputTokens),
+          agentTotals.outputTokens == null ? '—' : fmt(agentTotals.outputTokens),
+          null,
+          <span className="text-amber-500">{fmtCents(agentTotals.costCents)}</span>,
+        ]
+      : [
+          agentTotalCell,
+          null,
+          agentTotals.durationMs > 0 ? fmtMs(agentTotals.durationMs) : '—',
+          fmt(agentTotals.toolCount),
+          agentTotals.requests == null ? '—' : fmt(agentTotals.requests),
+          agentTotals.inputTokens == null ? '—' : fmt(agentTotals.inputTokens),
+          agentTotals.outputTokens == null ? '—' : fmt(agentTotals.outputTokens),
+        ]
+  }, [hasTranscript, agentRows.length, agentTotals])
 
   // ── Summary cards ─────────────────────────────────────────────
   // When transcripts are available, all five cards have data. Without

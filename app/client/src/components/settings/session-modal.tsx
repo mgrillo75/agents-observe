@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type TranscriptStatsData } from '@/lib/api-client'
 import { getServerHealth } from '@/lib/server-health'
@@ -871,29 +871,36 @@ function SessionStats({ sessionId }: { sessionId: string }) {
   }, [events, sessionId, transcript])
 
   // Click handlers for agent / prompt rows — close the modal and scroll
-  // the event stream to the relevant event.
-  const scrollToAgent = (agentId: string) => {
-    if (!events) return
-    const first = events.find((e) => e.agentId === agentId)
-    if (!first) return
-    setScrollToEventId(first.id)
-    setEditingSessionId(null)
-  }
-  const scrollToPrompt = (promptText: string, promptTimestamp: number) => {
-    if (!events) return
-    // Match by prompt text + closest timestamp. Falls back to text-only.
-    const ups = events.filter(
-      (e) => e.hookName === 'UserPromptSubmit' && (e.payload as any)?.prompt === promptText,
-    )
-    if (ups.length === 0) return
-    const closest = ups.reduce((best, e) =>
-      Math.abs(e.timestamp - promptTimestamp) < Math.abs(best.timestamp - promptTimestamp)
-        ? e
-        : best,
-    )
-    setScrollToEventId(closest.id)
-    setEditingSessionId(null)
-  }
+  // the event stream to the relevant event. useCallback so stable refs
+  // don't bust TokenUsageSection's downstream useMemos every render.
+  const scrollToAgent = useCallback(
+    (agentId: string) => {
+      if (!events) return
+      const first = events.find((e) => e.agentId === agentId)
+      if (!first) return
+      setScrollToEventId(first.id)
+      setEditingSessionId(null)
+    },
+    [events, setScrollToEventId, setEditingSessionId],
+  )
+  const scrollToPrompt = useCallback(
+    (promptText: string, promptTimestamp: number) => {
+      if (!events) return
+      // Match by prompt text + closest timestamp. Falls back to text-only.
+      const ups = events.filter(
+        (e) => e.hookName === 'UserPromptSubmit' && (e.payload as any)?.prompt === promptText,
+      )
+      if (ups.length === 0) return
+      const closest = ups.reduce((best, e) =>
+        Math.abs(e.timestamp - promptTimestamp) < Math.abs(best.timestamp - promptTimestamp)
+          ? e
+          : best,
+      )
+      setScrollToEventId(closest.id)
+      setEditingSessionId(null)
+    },
+    [events, setScrollToEventId, setEditingSessionId],
+  )
 
   if (isLoading || !stats) {
     return (
