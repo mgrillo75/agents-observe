@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '@/lib/api-client'
+import { api, type TranscriptStatsData } from '@/lib/api-client'
+import { getServerHealth } from '@/lib/server-health'
 import { useUIStore } from '@/stores/ui-store'
 import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -680,19 +681,7 @@ function computeStats(events: ParsedEvent[], sessionId: string): SessionStatsDat
 
   // Duration
   const durationMs = lastTs - firstTs
-  let duration: string
-  if (durationMs < 60_000) duration = `${Math.round(durationMs / 1000)}s`
-  else if (durationMs < 3_600_000) duration = `${Math.round(durationMs / 60_000)}m`
-  else if (durationMs < 86_400_000) {
-    const h = Math.floor(durationMs / 3_600_000)
-    const m = Math.round((durationMs % 3_600_000) / 60_000)
-    duration = `${h}h ${m}m`
-  } else {
-    const d = Math.floor(durationMs / 86_400_000)
-    const h = Math.floor((durationMs % 86_400_000) / 3_600_000)
-    const m = Math.round((durationMs % 3_600_000) / 60_000)
-    duration = `${d}d ${h}h ${m}m`
-  }
+  const duration = formatStatsDuration(durationMs)
 
   // Tool success rate
   const totalCompleted = postToolUseCount + postToolUseFailureCount
@@ -742,6 +731,48 @@ function computeStats(events: ParsedEvent[], sessionId: string): SessionStatsDat
   }
 }
 
+/**
+ * Override events-derived counts with JSONL-authoritative values when
+ * a transcript is available. The events-derived `stats` stays as the
+ * fallback shape; we only swap the fields the transcript covers.
+ *
+ * The transcript's `toolStats` is preferred for the All Tools table —
+ * it counts pre-plugin tool calls that events would miss. The
+ * `longestToolCall` card stays events-derived because clicking it
+ * needs an eventId to scroll to; the transcript has only tool_use_ids.
+ */
+function mergeStatsWithTranscript(
+  base: SessionStatsData,
+  summary: TranscriptStatsData['summary'],
+): SessionStatsData {
+  const tools: ToolStat[] = summary.toolStats.length > 0 ? summary.toolStats : base.tools
+  return {
+    ...base,
+    duration: summary.durationMs != null ? formatStatsDuration(summary.durationMs) : base.duration,
+    sessionDurationMs: summary.durationMs ?? base.sessionDurationMs,
+    toolCalls: summary.toolCalls || base.toolCalls,
+    filesRead: summary.filesRead || base.filesRead,
+    filesEdited: summary.filesEdited || base.filesEdited,
+    gitCommits: summary.gitCommits || base.gitCommits,
+    tools,
+  }
+}
+
+/** Compact duration format for the Duration stat card (no seconds when >= 1m). */
+function formatStatsDuration(ms: number): string {
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`
+  if (ms < 86_400_000) {
+    const h = Math.floor(ms / 3_600_000)
+    const m = Math.round((ms % 3_600_000) / 60_000)
+    return `${h}h ${m}m`
+  }
+  const d = Math.floor(ms / 86_400_000)
+  const h = Math.floor((ms % 86_400_000) / 3_600_000)
+  const m = Math.round((ms % 3_600_000) / 60_000)
+  return `${d}d ${h}h ${m}m`
+}
+
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
@@ -783,10 +814,38 @@ function SessionStats({ sessionId }: { sessionId: string }) {
 
   const agents = useAgents(sessionId, events)
 
-  const stats = useMemo(
-    () => (events ? computeStats(events, sessionId) : null),
-    [events, sessionId],
-  )
+  // Transcript stats — same query key as TokenUsageSection so the
+  // round-trip is deduped. When the server flag is off (or the
+  // transcript file is missing) data is undefined and we render
+  // events-only.
+  const { data: health } = useQuery({
+    queryKey: ['server-health'],
+    queryFn: getServerHealth,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  })
+  const transcriptStatsEnabled = health?.transcriptStatsEnabled === true
+  const { data: transcriptResponse } = useQuery({
+    queryKey: ['transcript-stats', sessionId],
+    queryFn: () => api.getTranscriptStats(sessionId),
+    enabled: transcriptStatsEnabled,
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  })
+  const transcript = transcriptResponse?.ok ? transcriptResponse.data : null
+
+  const stats = useMemo(() => {
+    if (!events) return null
+    const base = computeStats(events, sessionId)
+    if (!transcript) return base
+    // JSONL is authoritative for tool / file / commit counts and
+    // overall duration (events miss pre-plugin activity on resumed
+    // sessions). Per-tool stats also come from the transcript; the
+    // longest-tool card stays events-derived since it needs eventId
+    // for navigation.
+    return mergeStatsWithTranscript(base, transcript.summary)
+  }, [events, sessionId, transcript])
 
   // Click handlers for agent / prompt rows — close the modal and scroll
   // the event stream to the relevant event.

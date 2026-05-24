@@ -5,8 +5,18 @@ import type {
   TranscriptUsage,
   TranscriptSubagent,
   TranscriptParseError,
+  TranscriptToolStat,
   AgentParseResult,
 } from '../types'
+
+interface ToolUseRecord {
+  name: string
+  timestamp: number
+  /** Captured for Read/Edit/Write (file_path) — used for filesRead/filesEdited sets. */
+  filePath: string | null
+  /** Captured for Bash — used for gitCommits regex. */
+  command: string | null
+}
 
 // ── Parsing primitives ────────────────────────────────────────────
 
@@ -47,6 +57,13 @@ interface JsonlParseResult {
    *  proper "time spent on this prompt" without bleeding in idle time
    *  between prompts. */
   lastTimestampByPromptId: Record<string, number>
+  /** All tool_use blocks keyed by tool_use_id. Used by parseClaudeSession
+   *  to aggregate filesRead/filesEdited/gitCommits/toolStats across the
+   *  main JSONL + every subagent JSONL. */
+  toolUses: Map<string, ToolUseRecord>
+  /** Timestamps of tool_result blocks keyed by tool_use_id, used for
+   *  per-tool duration stats. */
+  toolResults: Map<string, number>
 }
 
 /**
@@ -59,6 +76,8 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
   const lineIndex = new Map<string, IndexedLine>()
   const prompts: Record<string, { text: string; timestamp: number }> = {}
   const firstUuidByMessageId = new Map<string, string>()
+  const toolUses = new Map<string, ToolUseRecord>()
+  const toolResults = new Map<string, number>()
 
   let firstTimestamp = Infinity
   let lastTimestamp = 0
@@ -103,6 +122,17 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
           if (block && block.type === 'tool_use' && typeof block.id === 'string') {
             toolUseIds.push(block.id)
             toolCount += 1
+            // First write wins — a given tool_use_id can appear in more
+            // than one assistant line for the same message (thinking +
+            // tool_use blocks emit separately). The first carries the
+            // canonical timestamp/name/input.
+            if (!toolUses.has(block.id)) {
+              const name = typeof block.name === 'string' ? block.name : ''
+              const input = block.input ?? null
+              const filePath = input && typeof input.file_path === 'string' ? input.file_path : null
+              const command = input && typeof input.command === 'string' ? input.command : null
+              toolUses.set(block.id, { name, timestamp: ts, filePath, command })
+            }
           }
         }
       }
@@ -125,20 +155,39 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
           promptId: null,
         })
       }
-    } else if (line.type === 'user' && line.promptId && line.message) {
+    } else if (line.type === 'user' && line.message) {
       const content = line.message.content
-      let text: string | null = null
-      if (typeof content === 'string') {
-        text = content
-      } else if (
-        Array.isArray(content) &&
-        content[0]?.type === 'text' &&
-        typeof content[0].text === 'string'
-      ) {
-        text = content[0].text
+      // Prompt text: only on user lines that originate a prompt
+      // (carry a promptId). Tool results don't have one.
+      if (typeof line.promptId === 'string' && line.promptId) {
+        let text: string | null = null
+        if (typeof content === 'string') {
+          text = content
+        } else if (
+          Array.isArray(content) &&
+          content[0]?.type === 'text' &&
+          typeof content[0].text === 'string'
+        ) {
+          text = content[0].text
+        }
+        if (text !== null && !(line.promptId in prompts)) {
+          prompts[line.promptId] = { text, timestamp: ts }
+        }
       }
-      if (text !== null && !(line.promptId in prompts)) {
-        prompts[line.promptId] = { text, timestamp: ts }
+      // Tool results: capture the timestamp keyed by tool_use_id so
+      // parseClaudeSession can pair each tool_use with its result and
+      // compute per-tool durations.
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (
+            block &&
+            block.type === 'tool_result' &&
+            typeof block.tool_use_id === 'string' &&
+            !toolResults.has(block.tool_use_id)
+          ) {
+            toolResults.set(block.tool_use_id, ts)
+          }
+        }
       }
     }
   }
@@ -195,6 +244,8 @@ async function parseJsonlFile(filePath: string): Promise<JsonlParseResult> {
     lastTimestamp,
     toolCount,
     lastTimestampByPromptId,
+    toolUses,
+    toolResults,
   }
 }
 
@@ -219,6 +270,7 @@ export async function parseClaudeSession(mainJsonlPath: string): Promise<AgentPa
   const subagentsDir = mainJsonlPath.replace(/\.jsonl$/, '') + '/subagents'
   const errors: TranscriptParseError[] = []
   const subagents: TranscriptSubagent[] = []
+  const subagentParses: JsonlParseResult[] = []
 
   let dirEntries: string[] = []
   try {
@@ -288,7 +340,10 @@ export async function parseClaudeSession(mainJsonlPath: string): Promise<AgentPa
     const row = buildSubagentRow(agentId, meta, parsed)
     if (row.requests === 0) continue
     subagents.push(row)
+    if (parsed) subagentParses.push(parsed)
   }
+
+  const toolAggregate = aggregateToolStats([main, ...subagentParses])
 
   return {
     calls: main.calls,
@@ -296,6 +351,123 @@ export async function parseClaudeSession(mainJsonlPath: string): Promise<AgentPa
     lastTimestampByPromptId: main.lastTimestampByPromptId,
     subagents,
     errors,
+    startedAt: main.firstTimestamp > 0 ? main.firstTimestamp : null,
+    durationMs:
+      main.firstTimestamp > 0 && main.lastTimestamp > main.firstTimestamp
+        ? main.lastTimestamp - main.firstTimestamp
+        : null,
+    toolCalls: toolAggregate.toolCalls,
+    filesRead: toolAggregate.filesRead,
+    filesEdited: toolAggregate.filesEdited,
+    gitCommits: toolAggregate.gitCommits,
+    toolStats: toolAggregate.toolStats,
+  }
+}
+
+const GIT_COMMIT_REGEX = /\bgit\s+commit\b/
+
+interface ToolAggregateResult {
+  toolCalls: number
+  filesRead: number
+  filesEdited: number
+  gitCommits: number
+  toolStats: TranscriptToolStat[]
+}
+
+/**
+ * Combine the main + per-subagent JsonlParseResult lists into a single
+ * tool-stats view. tool_use_ids are unique within a session, so the
+ * merge across files is straightforward: each id appears in exactly
+ * one toolUses map. Pairing with toolResults works the same way for
+ * regular tools; for the Agent tool the tool_use is in main and the
+ * tool_result is also in main (the subagent's own jsonl carries its
+ * internal tool activity but not the parent pairing), which the
+ * cross-file merge handles naturally.
+ */
+function aggregateToolStats(parses: JsonlParseResult[]): ToolAggregateResult {
+  const filesRead = new Set<string>()
+  const filesEdited = new Set<string>()
+  let gitCommits = 0
+
+  // Group durations + names per tool, tracking the longest invocation.
+  interface ToolAcc {
+    count: number
+    durations: number[]
+    longestMs: number
+    longestId: string | null
+  }
+  const perTool = new Map<string, ToolAcc>()
+  let toolCalls = 0
+
+  // First pass: walk every tool_use; populate file sets, gitCommits,
+  // and per-tool counts. We don't compute durations yet — that's a
+  // separate pass below so the result merge order doesn't matter.
+  for (const p of parses) {
+    for (const [, use] of p.toolUses) {
+      toolCalls += 1
+      if (use.name === 'Read' && use.filePath) filesRead.add(use.filePath)
+      else if ((use.name === 'Edit' || use.name === 'Write') && use.filePath) {
+        filesEdited.add(use.filePath)
+      } else if (use.name === 'Bash' && use.command && GIT_COMMIT_REGEX.test(use.command)) {
+        gitCommits += 1
+      }
+      const acc = perTool.get(use.name) ?? {
+        count: 0,
+        durations: [],
+        longestMs: 0,
+        longestId: null,
+      }
+      acc.count += 1
+      perTool.set(use.name, acc)
+    }
+  }
+
+  // Second pass: pair each tool_use with its tool_result (looked up
+  // across every parse since toolUseIds are session-unique). Track
+  // per-tool durations + longest.
+  const allResults = new Map<string, number>()
+  for (const p of parses) for (const [id, ts] of p.toolResults) allResults.set(id, ts)
+  for (const p of parses) {
+    for (const [id, use] of p.toolUses) {
+      const endTs = allResults.get(id)
+      if (!endTs || endTs <= use.timestamp) continue
+      const dur = endTs - use.timestamp
+      const acc = perTool.get(use.name)!
+      acc.durations.push(dur)
+      if (dur > acc.longestMs) {
+        acc.longestMs = dur
+        acc.longestId = id
+      }
+    }
+  }
+
+  const toolStats: TranscriptToolStat[] = [...perTool.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([name, acc]) => {
+      const durs = acc.durations.slice().sort((a, b) => a - b)
+      const mid = Math.floor(durs.length / 2)
+      const median =
+        durs.length === 0
+          ? null
+          : durs.length % 2 === 0
+            ? Math.round((durs[mid - 1] + durs[mid]) / 2)
+            : durs[mid]
+      return {
+        name,
+        count: acc.count,
+        minMs: durs.length > 0 ? durs[0] : null,
+        medianMs: median,
+        maxMs: durs.length > 0 ? durs[durs.length - 1] : null,
+        longestToolUseId: acc.longestId,
+      }
+    })
+
+  return {
+    toolCalls,
+    filesRead: filesRead.size,
+    filesEdited: filesEdited.size,
+    gitCommits,
+    toolStats,
   }
 }
 

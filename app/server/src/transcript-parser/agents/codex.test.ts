@@ -158,14 +158,14 @@ afterAll(() => {
 
 describe('parseCodexSession', () => {
   test('emits one TranscriptCall per *new* token_count snapshot — duplicates are skipped', async () => {
-    const result = await parseCodexSession(FIXTURE_PATH, [])
+    const result = await parseCodexSession(FIXTURE_PATH)
     expect(result.calls).toHaveLength(2)
     expect(result.calls[0].promptId).toBe('turn-1')
     expect(result.calls[1].promptId).toBe('turn-2')
   })
 
   test('reasoning_output_tokens rolls into the output bucket', async () => {
-    const result = await parseCodexSession(FIXTURE_PATH, [])
+    const result = await parseCodexSession(FIXTURE_PATH)
     // turn-1: output=20, reasoning=5 → 25
     expect(result.calls[0].usage.outputTokens).toBe(25)
     // turn-2: output=40, reasoning=10 → 50
@@ -173,7 +173,7 @@ describe('parseCodexSession', () => {
   })
 
   test('cached_input_tokens maps to cacheReadTokens; cache_write fields are zero', async () => {
-    const result = await parseCodexSession(FIXTURE_PATH, [])
+    const result = await parseCodexSession(FIXTURE_PATH)
     expect(result.calls[0].usage.cacheReadTokens).toBe(50)
     expect(result.calls[0].usage.cacheCreate5mTokens).toBe(0)
     expect(result.calls[0].usage.cacheCreate1hTokens).toBe(0)
@@ -183,19 +183,19 @@ describe('parseCodexSession', () => {
   })
 
   test('model from turn_context attaches to the call', async () => {
-    const result = await parseCodexSession(FIXTURE_PATH, [])
+    const result = await parseCodexSession(FIXTURE_PATH)
     expect(result.calls[0].model).toBe('gpt-5.4')
     expect(result.calls[1].model).toBe('gpt-5.4')
   })
 
   test('prompts indexed by turn_id with user_message text', async () => {
-    const result = await parseCodexSession(FIXTURE_PATH, [])
+    const result = await parseCodexSession(FIXTURE_PATH)
     expect(result.prompts['turn-1']?.text).toBe('hi')
     expect(result.prompts['turn-2']?.text).toBe("what's my name")
   })
 
   test('function_call attribution: tool_use_id appended to the most recent call', async () => {
-    const result = await parseCodexSession(FIXTURE_PATH, [])
+    const result = await parseCodexSession(FIXTURE_PATH)
     // turn-2 has one function_call landing between its first idle
     // token_count and the real one — should attach to turn-1's call
     // (the last one before the function_call line). That's fine for
@@ -205,7 +205,7 @@ describe('parseCodexSession', () => {
   })
 
   test('lastTimestampByPromptId attributes lines to the active turn', async () => {
-    const result = await parseCodexSession(FIXTURE_PATH, [])
+    const result = await parseCodexSession(FIXTURE_PATH)
     // turn-1's last activity = its task_complete at +2.5s
     expect(result.lastTimestampByPromptId['turn-1']).toBe(Date.parse('2026-06-01T00:00:02.500Z'))
     // turn-2's last activity = its task_complete at +13s
@@ -213,14 +213,14 @@ describe('parseCodexSession', () => {
   })
 
   test('subagents are always empty for codex', async () => {
-    const result = await parseCodexSession(FIXTURE_PATH, ['some-id'])
+    const result = await parseCodexSession(FIXTURE_PATH)
     expect(result.subagents).toEqual([])
   })
 
   test('empty file (no turns / token counts) produces a parse_error in errors[]', async () => {
     const emptyPath = join(TMP_DIR, 'empty.jsonl')
     writeFileSync(emptyPath, '')
-    const result = await parseCodexSession(emptyPath, [])
+    const result = await parseCodexSession(emptyPath)
     expect(result.errors).toContainEqual(
       expect.objectContaining({ scope: 'main', code: 'parse_error' }),
     )

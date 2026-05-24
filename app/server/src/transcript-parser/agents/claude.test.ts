@@ -265,6 +265,156 @@ describe('parseClaudeSession — main only', () => {
   })
 })
 
+describe('parseClaudeSession — tool stats', () => {
+  // Build a fixture with three different tools plus a pair of tool_result
+  // lines, so we exercise file aggregation, gitCommits matching, and the
+  // tool_use ↔ tool_result duration pairing in one pass.
+  const TOOL_FIXTURE_LINES = [
+    {
+      type: 'user',
+      uuid: 'u1',
+      parentUuid: null,
+      promptId: 'p1',
+      timestamp: '2026-07-01T00:00:00.000Z',
+      message: { content: 'do stuff' },
+    },
+    // Assistant emits 4 tool_use blocks across two messages.
+    {
+      type: 'assistant',
+      uuid: 'a1',
+      parentUuid: 'u1',
+      timestamp: '2026-07-01T00:00:01.000Z',
+      isSidechain: false,
+      message: {
+        id: 'm1',
+        model: 'claude-opus-4-7',
+        usage: { input_tokens: 1, output_tokens: 1 },
+        content: [
+          { type: 'tool_use', id: 'tu_read1', name: 'Read', input: { file_path: '/x/a.ts' } },
+          { type: 'tool_use', id: 'tu_read2', name: 'Read', input: { file_path: '/x/a.ts' } }, // same path → dedup
+          { type: 'tool_use', id: 'tu_edit', name: 'Edit', input: { file_path: '/x/b.ts' } },
+        ],
+      },
+    },
+    // tool_result for tu_read1 — 500ms after its tool_use.
+    {
+      type: 'user',
+      uuid: 'r1',
+      parentUuid: 'a1',
+      timestamp: '2026-07-01T00:00:01.500Z',
+      message: {
+        content: [{ type: 'tool_result', tool_use_id: 'tu_read1', content: 'ok' }],
+      },
+    },
+    // tool_result for tu_read2 — 2000ms (the slowest Read).
+    {
+      type: 'user',
+      uuid: 'r2',
+      parentUuid: 'r1',
+      timestamp: '2026-07-01T00:00:03.000Z',
+      message: {
+        content: [{ type: 'tool_result', tool_use_id: 'tu_read2', content: 'ok' }],
+      },
+    },
+    // Bash invocation that should match the git commit regex.
+    {
+      type: 'assistant',
+      uuid: 'a2',
+      parentUuid: 'r2',
+      timestamp: '2026-07-01T00:00:04.000Z',
+      isSidechain: false,
+      message: {
+        id: 'm2',
+        model: 'claude-opus-4-7',
+        usage: { input_tokens: 1, output_tokens: 1 },
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tu_bash',
+            name: 'Bash',
+            input: { command: 'git commit -m hi' },
+          },
+        ],
+      },
+    },
+  ]
+
+  test('aggregates filesRead/filesEdited/gitCommits/toolCalls + per-tool durations + longestToolUseId', async () => {
+    const path = join(TMP_DIR, 'tools.jsonl')
+    writeFileSync(path, TOOL_FIXTURE_LINES.map((l) => JSON.stringify(l)).join('\n') + '\n')
+
+    const result = await parseClaudeSession(path)
+
+    expect(result.toolCalls).toBe(4)
+    expect(result.filesRead).toBe(1) // /x/a.ts appears twice → deduped
+    expect(result.filesEdited).toBe(1) // /x/b.ts
+    expect(result.gitCommits).toBe(1)
+
+    // Per-tool stats: Read should appear with both invocations, Edit + Bash with one each.
+    const byName = new Map(result.toolStats.map((t) => [t.name, t]))
+    expect(byName.get('Read')!.count).toBe(2)
+    expect(byName.get('Read')!.minMs).toBe(500)
+    expect(byName.get('Read')!.maxMs).toBe(2_000)
+    expect(byName.get('Read')!.longestToolUseId).toBe('tu_read2')
+    // Edit has no paired tool_result in the fixture → null durations.
+    expect(byName.get('Edit')!.count).toBe(1)
+    expect(byName.get('Edit')!.minMs).toBeNull()
+    expect(byName.get('Edit')!.longestToolUseId).toBeNull()
+    expect(byName.get('Bash')!.count).toBe(1)
+
+    // startedAt + durationMs from the main JSONL timestamps.
+    expect(result.startedAt).toBe(Date.parse('2026-07-01T00:00:00.000Z'))
+    expect(result.durationMs).toBe(4_000)
+  })
+
+  test('tool stats merge across main + subagent jsonls', async () => {
+    const path = join(TMP_DIR, 'merge.jsonl')
+    writeFileSync(path, TOOL_FIXTURE_LINES.map((l) => JSON.stringify(l)).join('\n') + '\n')
+
+    // Subagent that runs a Read of its own — should be added to the main
+    // session's Read count and filesRead set.
+    const dir = path.replace(/\.jsonl$/, '') + '/subagents'
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      dir + '/agent-sub1.jsonl',
+      [
+        {
+          type: 'assistant',
+          uuid: 'sub-a1',
+          parentUuid: null,
+          timestamp: '2026-07-01T00:00:05.000Z',
+          isSidechain: true,
+          message: {
+            id: 'sub-m1',
+            model: 'claude-haiku-4-5',
+            usage: { input_tokens: 1, output_tokens: 1 },
+            content: [
+              {
+                type: 'tool_use',
+                id: 'tu_sub_read',
+                name: 'Read',
+                input: { file_path: '/sub/y.ts' },
+              },
+            ],
+          },
+        },
+      ]
+        .map((l) => JSON.stringify(l))
+        .join('\n') + '\n',
+    )
+    writeFileSync(
+      dir + '/agent-sub1.meta.json',
+      JSON.stringify({ agentType: 'X', description: '', toolUseId: 'tu_x' }),
+    )
+
+    const result = await parseClaudeSession(path)
+    expect(result.toolCalls).toBe(5) // 4 main + 1 sub
+    expect(result.filesRead).toBe(2) // /x/a.ts + /sub/y.ts
+    const read = result.toolStats.find((t) => t.name === 'Read')!
+    expect(read.count).toBe(3) // 2 main Reads + 1 sub Read
+  })
+})
+
 function writeSubagent(
   mainTranscriptPath: string,
   agentId: string,

@@ -62,6 +62,29 @@ export interface AgentParseResult {
   lastTimestampByPromptId: Record<string, number>
   subagents: TranscriptSubagent[]
   errors: TranscriptParseError[]
+  /** Session-wide aggregates derived from main + subagent JSONLs. */
+  startedAt: number | null
+  durationMs: number | null
+  toolCalls: number
+  filesRead: number
+  filesEdited: number
+  gitCommits: number
+  toolStats: TranscriptToolStat[]
+}
+
+export interface TranscriptToolStat {
+  name: string
+  count: number
+  /** Pairing-derived duration stats. null when no tool_result line was
+   *  found for any invocation of this tool. */
+  minMs: number | null
+  medianMs: number | null
+  maxMs: number | null
+  /** tool_use_id of the slowest invocation. The UI cross-references
+   *  against PreToolUse events to make the row clickable when an event
+   *  exists; falls back to non-clickable when the event isn't captured
+   *  (pre-plugin tool calls). */
+  longestToolUseId: string | null
 }
 
 export interface TranscriptPrompt {
@@ -99,6 +122,16 @@ export interface TranscriptSummaryV2 {
   outputTotal: number
   cacheHitRate: number
   costTotalCents: number | null
+  /** First/last timestamps + wall-clock duration of the main JSONL.
+   *  null when the JSONL has no timestamped lines. */
+  startedAt: number | null
+  durationMs: number | null
+  /** Tool-use counts aggregated across the main agent + every subagent. */
+  toolCalls: number
+  filesRead: number
+  filesEdited: number
+  gitCommits: number
+  toolStats: TranscriptToolStat[]
 }
 
 export interface TranscriptStatsV2 {

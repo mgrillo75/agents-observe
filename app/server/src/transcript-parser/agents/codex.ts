@@ -82,6 +82,9 @@ export async function parseCodexSession(mainJsonlPath: string): Promise<AgentPar
   // means a new API call landed since we last checked.
   let lastSeenTotalTokens: number | null = null
 
+  let firstTimestamp = Infinity
+  let lastTimestamp = 0
+
   const stream = createReadStream(mainJsonlPath, { encoding: 'utf8' })
   const rl = createInterface({ input: stream, crlfDelay: Infinity })
 
@@ -94,6 +97,10 @@ export async function parseCodexSession(mainJsonlPath: string): Promise<AgentPar
       continue
     }
     const ts = parseTimestamp(line.timestamp)
+    if (ts > 0) {
+      if (ts < firstTimestamp) firstTimestamp = ts
+      if (ts > lastTimestamp) lastTimestamp = ts
+    }
     const payload = line.payload ?? {}
     const lineType = line.type
 
@@ -173,11 +180,22 @@ export async function parseCodexSession(mainJsonlPath: string): Promise<AgentPar
     })
   }
 
+  const startedAt = firstTimestamp === Infinity ? null : firstTimestamp
   return {
     calls,
     prompts,
     lastTimestampByPromptId,
     subagents: [],
     errors,
+    startedAt,
+    durationMs: startedAt != null && lastTimestamp > startedAt ? lastTimestamp - startedAt : null,
+    // Codex doesn't surface tool_use/tool_result blocks in the same
+    // shape; tool stats stay empty here and the UI falls back to its
+    // events-derived view.
+    toolCalls: 0,
+    filesRead: 0,
+    filesEdited: 0,
+    gitCommits: 0,
+    toolStats: [],
   }
 }

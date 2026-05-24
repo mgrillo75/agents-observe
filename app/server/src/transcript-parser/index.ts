@@ -7,6 +7,7 @@ import type {
   TranscriptParseError,
   TranscriptCall,
   TranscriptUsage,
+  AgentParseResult,
 } from './types'
 import { parseClaudeSession } from './agents/claude'
 import { parseCodexSession } from './agents/codex'
@@ -53,7 +54,20 @@ export async function parseSessionTranscripts(
     // `errors[]`, which is how the UI handles non-supported classes.
     return {
       source: 'jsonl',
-      summary: { totalCalls: 0, inputTotal: 0, outputTotal: 0, cacheHitRate: 0, costTotalCents: 0 },
+      summary: {
+        totalCalls: 0,
+        inputTotal: 0,
+        outputTotal: 0,
+        cacheHitRate: 0,
+        costTotalCents: 0,
+        startedAt: null,
+        durationMs: null,
+        toolCalls: 0,
+        filesRead: 0,
+        filesEdited: 0,
+        gitCommits: 0,
+        toolStats: [],
+      },
       byModel: [],
       prompts: [],
       subagents: [],
@@ -74,7 +88,7 @@ export async function parseSessionTranscripts(
     subagents,
     pricingMap,
   )
-  const summary = aggregateSummary(result.calls, subagents, pricingMap)
+  const summary = aggregateSummary(result, subagents, pricingMap)
   const models = buildModelsMap(
     byModel.map((m) => m.model),
     pricingMap,
@@ -300,16 +314,16 @@ function attachSubagentCosts(
 }
 
 function aggregateSummary(
-  mainCalls: TranscriptCall[],
+  result: AgentParseResult,
   subagents: TranscriptSubagent[],
   pricingMap: Record<string, ModelPricing>,
 ): TranscriptStatsV2['summary'] {
-  let totalCalls = mainCalls.length
+  let totalCalls = result.calls.length
   let inputTotal = 0
   let outputTotal = 0
   let cacheRead = 0
   let costTotalCents: number | null = 0
-  for (const c of mainCalls) {
+  for (const c of result.calls) {
     inputTotal +=
       c.usage.inputTokens +
       c.usage.cacheReadTokens +
@@ -341,6 +355,13 @@ function aggregateSummary(
     outputTotal,
     cacheHitRate: inputTotal > 0 ? cacheRead / inputTotal : 0,
     costTotalCents,
+    startedAt: result.startedAt,
+    durationMs: result.durationMs,
+    toolCalls: result.toolCalls,
+    filesRead: result.filesRead,
+    filesEdited: result.filesEdited,
+    gitCommits: result.gitCommits,
+    toolStats: result.toolStats,
   }
 }
 

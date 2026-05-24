@@ -311,6 +311,15 @@ export interface TranscriptStatsParseError {
   message: string
 }
 
+export interface TranscriptStatsToolStat {
+  name: string
+  count: number
+  minMs: number | null
+  medianMs: number | null
+  maxMs: number | null
+  longestToolUseId: string | null
+}
+
 export interface TranscriptStatsData {
   source: 'jsonl'
   summary: {
@@ -319,6 +328,13 @@ export interface TranscriptStatsData {
     outputTotal: number
     cacheHitRate: number
     costTotalCents: number | null
+    startedAt: number | null
+    durationMs: number | null
+    toolCalls: number
+    filesRead: number
+    filesEdited: number
+    gitCommits: number
+    toolStats: TranscriptStatsToolStat[]
   }
   byModel: TranscriptStatsByModel[]
   prompts: TranscriptStatsPrompt[]
