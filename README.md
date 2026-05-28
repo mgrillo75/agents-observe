@@ -80,12 +80,12 @@ mv ~/.claude/plugins/cache/agents-observe/agents-observe/0.9.6/data/data ~/.clau
 edit ~/.claude/settings.json
 ```
 
-Set AGENTS_OBSERVE_DATA_DIR env var in `~/.claude/settings.json`
+Set AGENTS_OBSERVE_LOCAL_DATA_ROOT env var in `~/.claude/settings.json`
 
 ```jsonc
   // ~/.claude/settings.json
   "env": {
-    "AGENTS_OBSERVE_DATA_DIR": "~/.claude/plugins/data/agents-observe/data"
+    "AGENTS_OBSERVE_LOCAL_DATA_ROOT": "~/.claude/plugins/data/agents-observe/data"
   },
 ```
 
