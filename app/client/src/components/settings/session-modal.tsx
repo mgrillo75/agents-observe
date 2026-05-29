@@ -38,6 +38,7 @@ import { MoveSessionModal } from './project-modal'
 import { CollapsibleSection } from './sections/collapsible-section'
 import { TokenUsageSection } from './sections/token-usage-section'
 import { useAgents } from '@/hooks/use-agents'
+import { getStatsProvider } from './stats'
 import type { Project, ParsedEvent } from '@/types'
 
 function formatRelativeTime(ts: number): string {
@@ -502,7 +503,7 @@ export interface ToolStat {
   maxMs: number | null
 }
 
-interface SessionStatsData {
+export interface SessionStatsData {
   duration: string
   totalEvents: number
   toolCalls: number
@@ -823,26 +824,36 @@ function SessionStats({ sessionId }: { sessionId: string }) {
 
   const agents = useAgents(sessionId, events)
 
+  // Per-agent-class stats provider. Claude Code (and anything without a
+  // registered provider) falls through to the built-in transcript path below.
+  const agentClass = useMemo(
+    () => agents.find((a) => a.id === sessionId)?.agentClass ?? null,
+    [agents, sessionId],
+  )
+  const provider = getStatsProvider(agentClass)
+
   // Set of prompt texts the plugin captured a prompt event for. Lets the
   // prompts table render rows without a matching event (pre-plugin prompts
-  // on resumed sessions) as muted/non-clickable. UserPromptExpansion
-  // covers slash commands (`/cmd args`), whose transcript prompt is the
-  // reconstructed command — both event types carry that same text.
+  // on resumed sessions) as muted/non-clickable. UserPromptExpansion covers
+  // slash commands (`/cmd args`); Hermes carries the prompt on pre_llm_call.
   const eventPromptTexts = useMemo(() => {
     const s = new Set<string>()
     if (!events) return s
     for (const e of events) {
-      if (e.hookName !== 'UserPromptSubmit' && e.hookName !== 'UserPromptExpansion') continue
-      const p = (e.payload as any)?.prompt
-      if (typeof p === 'string') s.add(p)
+      if (e.hookName === 'UserPromptSubmit' || e.hookName === 'UserPromptExpansion') {
+        const p = (e.payload as any)?.prompt
+        if (typeof p === 'string') s.add(p)
+      } else if (e.hookName === 'pre_llm_call') {
+        const m = (e.payload as any)?.user_message
+        if (typeof m === 'string') s.add(m)
+      }
     }
     return s
   }, [events])
 
   // Transcript stats — same query key as TokenUsageSection so the
-  // round-trip is deduped. When the server flag is off (or the
-  // transcript file is missing) data is undefined and we render
-  // events-only.
+  // round-trip is deduped. Skipped entirely for event-native providers
+  // (Hermes) which compute token usage from events instead.
   const { data: health } = useQuery({
     queryKey: ['server-health'],
     queryFn: getServerHealth,
@@ -853,15 +864,30 @@ function SessionStats({ sessionId }: { sessionId: string }) {
   const { data: transcriptResponse } = useQuery({
     queryKey: ['transcript-stats', sessionId],
     queryFn: () => api.getTranscriptStats(sessionId),
-    enabled: transcriptStatsEnabled,
+    enabled: transcriptStatsEnabled && !provider,
     staleTime: Infinity,
     gcTime: 0,
     refetchOnWindowFocus: false,
   })
   const transcript = transcriptResponse?.ok ? transcriptResponse.data : null
 
+  // Model pricing for event-native providers — just the models this session
+  // used (fetched from /api/models/pricing, which reuses the models.dev cache).
+  const providerModelIds = useMemo(
+    () => (provider?.modelIds && events ? provider.modelIds(events) : []),
+    [provider, events],
+  )
+  const { data: pricing } = useQuery({
+    queryKey: ['model-pricing', sessionId, providerModelIds],
+    queryFn: () => api.getModelPricing(providerModelIds),
+    enabled: !!provider && providerModelIds.length > 0,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  })
+
   const stats = useMemo(() => {
     if (!events) return null
+    if (provider) return provider.computeOverview(events, sessionId)
     const base = computeStats(events, sessionId)
     if (!transcript) return base
     // JSONL is authoritative for tool / file / commit counts and
@@ -870,7 +896,14 @@ function SessionStats({ sessionId }: { sessionId: string }) {
     // longest-tool card stays events-derived since it needs eventId
     // for navigation.
     return mergeStatsWithTranscript(base, transcript)
-  }, [events, sessionId, transcript])
+  }, [events, sessionId, transcript, provider])
+
+  // Token dataset injected into TokenUsageSection for event-native providers
+  // (undefined for Claude, which lets TokenUsageSection fetch the transcript).
+  const injectedTokenStats = useMemo(() => {
+    if (!provider?.computeTokenStats || !events) return undefined
+    return provider.computeTokenStats(events, sessionId, pricing ?? {})
+  }, [provider, events, sessionId, pricing])
 
   // Click handlers for agent / prompt rows — close the modal and scroll
   // the event stream to the relevant event. useCallback so stable refs
@@ -893,8 +926,11 @@ function SessionStats({ sessionId }: { sessionId: string }) {
       // UserPromptSubmit); accept either so `/cmd args` rows can scroll.
       const ups = events.filter(
         (e) =>
-          (e.hookName === 'UserPromptSubmit' || e.hookName === 'UserPromptExpansion') &&
-          (e.payload as any)?.prompt === promptText,
+          (e.hookName === 'UserPromptSubmit' ||
+            e.hookName === 'UserPromptExpansion' ||
+            e.hookName === 'pre_llm_call') &&
+          ((e.payload as any)?.prompt === promptText ||
+            (e.payload as any)?.user_message === promptText),
       )
       if (ups.length === 0) return
       const closest = ups.reduce((best, e) =>
@@ -1107,6 +1143,7 @@ function SessionStats({ sessionId }: { sessionId: string }) {
         onAgentClick={scrollToAgent}
         onPromptClick={scrollToPrompt}
         eventPromptTexts={eventPromptTexts}
+        injectedTranscript={injectedTokenStats}
       />
     </div>
   )

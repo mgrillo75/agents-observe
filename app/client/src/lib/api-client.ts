@@ -252,6 +252,19 @@ export const api = {
     }
     return { ok: true, status: 200, data: body as TranscriptStatsData }
   },
+
+  /** Look up model pricing by id. Used by event-native agent classes (e.g.
+   *  Hermes) that compute cost client-side from event token usage instead of
+   *  a transcript. Returns id → pricing (null when unknown). */
+  getModelPricing: async (
+    ids: string[],
+  ): Promise<Record<string, TranscriptStatsModelPricing | null>> => {
+    if (ids.length === 0) return {}
+    const res = await fetch(`${API_BASE}/models/pricing?ids=${encodeURIComponent(ids.join(','))}`)
+    if (!res.ok) return {}
+    const body = await res.json().catch(() => ({}))
+    return (body.pricing ?? {}) as Record<string, TranscriptStatsModelPricing | null>
+  },
 }
 
 // ── Transcript stats types (V2: matches server transcript-parser) ──
